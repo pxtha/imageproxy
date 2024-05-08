@@ -1,6 +1,4 @@
-# syntax=docker/dockerfile:1.4
 FROM --platform=linux/amd64 cgr.dev/chainguard/wolfi-base as build
-LABEL maintainer="Will Norris <will@willnorris.com>"
 
 RUN apk update && apk add build-base git openssh go-1.20
 
@@ -12,16 +10,13 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v ./cmd/imageproxy -o imageproxy.bin
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -v ./cmd/imageproxy
 
-FROM alpine:3.8
+FROM cgr.dev/chainguard/static:latest
 
 COPY --from=build /app/imageproxy /app/imageproxy
 
-RUN chmod +x /app/imageproxy/imageproxy.bin
+CMD ["-addr", "0.0.0.0:8222"]
+ENTRYPOINT ["/app/imageproxy"]
 
 EXPOSE 8222
-
-RUN ls -la /app/imageproxy
-
-CMD ["/app/imageproxy/imageproxy.bin"]
