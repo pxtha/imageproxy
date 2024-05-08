@@ -10,16 +10,11 @@ services:
       - AWS_SECRET_KEY=${UC_AWS_SECRET_KEY}
     ports:
       - "8222:8222"
-    command: ["-addr", "0.0.0.0:8222", "-cache", "memory:200:4h", "-cache", "/tmp/imageproxy", "-baseURL", "${UC_AWS_ENDPOINT}"]
-    volumes:
-      - .:/tmp
+    command: ["/app/imageproxy", "-addr", "0.0.0.0:8222", "-cache", "memory:200:4h", "-cache", "/tmp/imageproxy", "-baseURL", "${UC_AWS_ENDPOINT}"]
+
     networks:
       - noormatch_network
-
-volumes:
-  # use a shared gopath, avoid re-download module each go running
-  shared_gopath: {}
-
+      
 networks:
   noormatch_network:
       name: noormatch_network

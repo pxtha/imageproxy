@@ -18,7 +18,6 @@ FROM cgr.dev/chainguard/static:latest
 
 COPY --from=build /app/imageproxy /app/imageproxy
 
-CMD ["-addr", "0.0.0.0:8080"]
-ENTRYPOINT ["/app/imageproxy"]
+RUN ls -la /app
 
-EXPOSE 8080
+EXPOSE 8222
