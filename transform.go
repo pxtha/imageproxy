@@ -6,15 +6,8 @@ package imageproxy
 import (
 	"bytes"
 	"fmt"
-	"image"
-	_ "image/gif" // register gif format
-	"image/jpeg"
-	"image/png"
-	"io"
-	"log"
-	"math"
-
 	"github.com/disintegration/imaging"
+	"github.com/jdeng/goheif"
 	"github.com/muesli/smartcrop"
 	"github.com/muesli/smartcrop/nfnt"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,8 +15,63 @@ import (
 	"golang.org/x/image/bmp"    // register bmp format
 	"golang.org/x/image/tiff"   // register tiff format
 	_ "golang.org/x/image/webp" // register webp format
+	"image"
+	_ "image/gif" // register gif format
+	"image/jpeg"
+	"image/png"
+	"io"
+	"log"
+	"math"
 	"willnorris.com/go/gifresize"
 )
+
+// Skip Writer for exif writing
+type writerSkipper struct {
+	w           io.Writer
+	bytesToSkip int
+}
+
+func (w *writerSkipper) Write(data []byte) (int, error) {
+	if w.bytesToSkip <= 0 {
+		return w.w.Write(data)
+	}
+
+	if dataLen := len(data); dataLen < w.bytesToSkip {
+		w.bytesToSkip -= dataLen
+		return dataLen, nil
+	}
+
+	if n, err := w.w.Write(data[w.bytesToSkip:]); err == nil {
+		n += w.bytesToSkip
+		w.bytesToSkip = 0
+		return n, nil
+	} else {
+		return n, err
+	}
+}
+
+func newWriterExif(w io.Writer, exif []byte) (io.Writer, error) {
+	writer := &writerSkipper{w, 2}
+	soi := []byte{0xff, 0xd8}
+	if _, err := w.Write(soi); err != nil {
+		return nil, err
+	}
+
+	if exif != nil {
+		app1Marker := 0xe1
+		markerlen := 2 + len(exif)
+		marker := []byte{0xff, uint8(app1Marker), uint8(markerlen >> 8), uint8(markerlen & 0xff)}
+		if _, err := w.Write(marker); err != nil {
+			return nil, err
+		}
+
+		if _, err := w.Write(exif); err != nil {
+			return nil, err
+		}
+	}
+
+	return writer, nil
+}
 
 // default compression quality of resized jpegs
 const defaultQuality = 95
@@ -34,6 +82,11 @@ const maxExifSize = 1 << 20
 // resample filter used when resizing images
 var resampleFilter = imaging.Lanczos
 
+func isHEIC(img []byte) bool {
+	// HEIC files start with the string "ftypheic", "ftypmif1", "ftypmsf1" or "ftypheix" at the 5th byte
+	return string(img[4:12]) == "ftypheic" || string(img[4:12]) == "ftypmif1" || string(img[4:12]) == "ftypmsf1" || string(img[4:12]) == "ftypheix"
+}
+
 // Transform the provided image.  img should contain the raw bytes of an
 // encoded image in one of the supported formats (gif, jpeg, or png).  The
 // bytes of a similarly encoded image is returned.
@@ -42,11 +95,23 @@ func Transform(img []byte, opt Options) ([]byte, error) {
 		// bail if no transformation was requested
 		return img, nil
 	}
-
-	// decode image
-	m, format, err := image.Decode(bytes.NewReader(img))
-	if err != nil {
-		return nil, err
+	var m image.Image
+	var err error
+	var format string
+	// check if img isHEIC
+	if isHEIC(img) {
+		// decode image
+		m, err = goheif.Decode(bytes.NewReader(img))
+		if err != nil {
+			log.Fatalf("Failed to parse %s: ", err)
+		}
+		format = "heic"
+	} else {
+		// decode image
+		m, format, err = image.Decode(bytes.NewReader(img))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// apply EXIF orientation for jpeg and tiff source images. Read at most
@@ -70,6 +135,17 @@ func Transform(img []byte, opt Options) ([]byte, error) {
 	// transform and encode image
 	buf := new(bytes.Buffer)
 	switch format {
+	case "heic":
+		m = transformImage(m, opt)
+		buf := new(bytes.Buffer)
+		w, _ := newWriterExif(buf, nil)
+		err = jpeg.Encode(w, m, nil)
+		if err != nil {
+			log.Fatalf("Failed to encode to buffer: %v\n", err)
+		}
+		log.Printf("Converted HEIC to JPEG successfully\n")
+		return buf.Bytes(), nil
+
 	case "bmp":
 		m = transformImage(m, opt)
 		err = bmp.Encode(buf, m)
