@@ -10,7 +10,7 @@ services:
       - AWS_SECRET_KEY=${UC_AWS_SECRET_KEY}
     ports:
       - "8222:8222"
-    command: ["/app/imageproxy", "-addr", "0.0.0.0:8222", "-cache", "memory:200:4h", "-cache", "/tmp/imageproxy", "-baseURL", "${UC_AWS_ENDPOINT}"]
+    command: ["-addr", "0.0.0.0:8222", "-cache", "memory:200:4h", "-cache", "/tmp/imageproxy", "-baseURL", "${UC_AWS_ENDPOINT}"]
 
     networks:
       - noormatch_network

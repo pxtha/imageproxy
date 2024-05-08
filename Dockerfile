@@ -12,12 +12,16 @@ COPY . .
 
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v ./cmd/imageproxy
+RUN CGO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -v ./cmd/imageproxy -o imageproxy.bin
 
-FROM cgr.dev/chainguard/static:latest
+FROM alpine:3.8
 
 COPY --from=build /app/imageproxy /app/imageproxy
 
-RUN ls -la /app
+RUN chmod +x /app/imageproxy/imageproxy.bin
 
 EXPOSE 8222
+
+RUN ls -la /app/imageproxy
+
+CMD ["/app/imageproxy/imageproxy.bin"]
